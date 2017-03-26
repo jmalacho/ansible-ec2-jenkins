@@ -1,0 +1,45 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: False
+  
+  tasks:
+    - ec2_remote_facts:
+        region: "{{ vpc.region }}"
+        filters:
+          instance-state-name: running
+          "tag:Name": malachowski-jenkins
+      register: ec2_instance
+
+    - set_fact:
+       instances: "{{ ec2_instance | json_query('instances[*].id') }}"
+
+    - debug: var=instances
+
+
+    - name: Provision a set of instances
+      ec2:
+         instance_ids: "{{ instances }}"
+         state: absent
+         key_name: "{{ ec2.key }}"
+         group: jonmalachowski 
+         instance_type: "{{ ec2.type }}"
+         region: "{{ vpc.region }}"
+         id: "{{ ec2.uniqueid }}"
+         wait: true
+         instance_tags:
+            Name: malachowski-jenkins
+      when: instances.0 is defined
+
+    - ec2_group:
+         name: jonmalachowski
+         description: an example EC2 group
+         vpc_id: "{{ vpc_result.vpc_id }}"
+         region: "{{ vpc.region }}"
+         state: absent
+
+    - ec2_vpc:
+         state: absent
+         cidr_block: "{{ vpc.cidr16 }}.0.0/16"
+         region: "{{ vpc.region }}"
+         resource_tags: { "Environment":"malachowski", "Name":"jonmalachowski" }

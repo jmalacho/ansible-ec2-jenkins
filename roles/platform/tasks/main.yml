@@ -1,0 +1,32 @@
+---
+- name: Gather facts
+  ec2_facts:
+
+- include: yum-repo.yml
+  with_items:
+  - name: dockerrepo
+    url: https://yum.dockerproject.org/repo/main/centos/7/ 
+
+- yum: name=epel-release
+
+- yum:
+    name: "{{ item }}"
+    state: present
+  with_items:
+  - git
+  - python2-pip
+  - docker-engine
+  
+- yum:
+    name: '*'
+    state: latest
+  when: (ec2.update_instance is defined) and (ec2.update_instance)
+  register: reboot_required
+
+- pip: name=backports.ssl_match_hostname version=3.5.0.1
+- pip: name=docker-compose umask=0022
+
+- service:
+    name: docker
+    enabled: yes
+    state: started    

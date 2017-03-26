@@ -1,0 +1,8 @@
+jenkins_admin_password: adminpass
+
+jenkins_plugins:
+- docker-workflow
+- git
+- workflow-aggregator
+
+

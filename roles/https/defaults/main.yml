@@ -1,0 +1,4 @@
+---
+https:
+  proxyport: 8080
+  client_max_body_mb: 20

@@ -1,0 +1,132 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: False
+  
+  tasks:
+    - ec2_ami_find:
+        name: "CentOS Linux 7*"
+        virtualization_type: hvm
+        architecture: x86_64
+        region: "{{ vpc.region }}"
+        owner: aws-marketplace
+        sort: creationDate
+        sort_order: descending
+        sort_end: 5
+        no_result_action: fail
+      register: ami_find
+      when: ec2.ami_id is not defined
+
+    - set_fact:
+        ami: "{{ ami_find | json_query('results[*].ami_id') | first }}"
+      when: ec2.ami_id is not defined
+
+    - ec2_key:
+        name: "{{ ec2.key | default('jenkins') }}"
+        key_material: "{{ item }}"
+        region: "{{ vpc.region }}"
+      with_file: ~/.ssh/id_rsa.pub
+
+    - ec2_vpc:
+         state: present
+         cidr_block: "{{ vpc.cidr16 }}.0.0/16"
+         region: "{{ vpc.region }}"
+         internet_gateway: yes
+         resource_tags: { "Environment":"malachowski", "Name":"jonmalachowski" }
+         subnets:
+         - cidr: "{{ vpc.cidr16 }}.1.0/24"
+           az: "{{ vpc.region }}a"
+           resource_tags: { "Environtment":"malachowski","Name":"jonmalachowski" }
+         - cidr: "{{ vpc.cidr16 }}.2.0/24"
+           az: "{{ vpc.region }}b"
+           resource_tags: { "Environtment":"malachowski" }
+         route_tables:
+         - subnets:
+              - "{{ vpc.cidr16 }}.1.0/24"
+              - "{{ vpc.cidr16 }}.2.0/24"
+           routes:
+              - dest: 0.0.0.0/0
+                gw: igw
+      register: vpc_result 
+
+    - debug: var=vpc_result.subnets
+    - set_fact:
+        subnet: "{{ vpc_result.subnets | first }}"
+    - debug: var=subnet
+
+    - ec2_group:
+         name: jonmalachowski
+         description: an example EC2 group
+         vpc_id: "{{ vpc_result.vpc_id }}"
+         region: "{{ vpc.region }}"
+         rules:
+         - proto: tcp
+           from_port: 22
+           to_port: 22
+           cidr_ip: 0.0.0.0/0
+         - proto: tcp
+           from_port: 8080
+           to_port: 8080
+           cidr_ip: 0.0.0.0/0
+         - proto: tcp
+           from_port: 443
+           to_port: 443
+           cidr_ip: 0.0.0.0/0
+         - proto: tcp
+           from_port: 80
+           to_port: 80
+           cidr_ip: 0.0.0.0/0
+
+
+    - name: Provision a set of instances
+      ec2:
+         key_name: "{{ ec2.key }}"
+         group: jonmalachowski 
+         instance_type: "{{ ec2.type }}"
+         image: "{{ ec2.ami_id | default(ami) }}"
+         region: "{{ vpc.region }}"
+         vpc_subnet_id: "{{ subnet.id }} "
+         assign_public_ip: yes
+         id: "{{ ec2.uniqueid }}"
+         wait: true
+         instance_tags:
+            Name: malachowski-jenkins
+      register: ec2_result
+
+#         volumes:
+#         - device_name: /dev/sda
+#           delete_on_termination: true
+
+    - set_fact:
+         ec2_instances: "{{ ec2_result.instances }}"
+
+    - debug:
+        var: item.public_ip
+      with_items: "{{ ec2_instances }}" 
+
+    - name: Add new instance to host group
+      add_host:
+        hostname: "{{ item.public_ip }}"
+        groupname: jenkins
+      with_items: "{{ ec2_instances }}"
+
+    - name: Wait for SSH to come up
+      wait_for:
+        host: "{{ item.public_dns_name }}"
+        port: 22
+        delay: 2
+        timeout: 320
+        state: started
+      retries: 2
+      with_items: "{{ ec2_instances }}"
+
+- name: Configure instance(s)
+  hosts: jenkins
+  become: True
+  gather_facts: True
+  remote_user: centos
+  roles:
+  - platform
+  - jenkins
+  - https
+  - jenkins-job

@@ -1,0 +1,34 @@
+---
+- yum:
+    name: epel-release
+    state: latest
+
+- yum:
+    name: nginx
+    state: latest
+
+- seboolean:
+    name: httpd_can_network_connect
+    state: yes
+    persistent: yes
+  with_items:
+  - httpd_can_network_connect
+  - httpd_can_network_relay
+
+- debug: var=ansible_ec2_public_hostname
+
+- name: create self-signed SSL cert
+  command: openssl req -new -nodes -x509 -subj "/C=US/ST=Maryland/L=Cloud/O=IT/CN={{ansible_ec2_public_hostname}}" -days 3650 -keyout /etc/nginx/cert.key -out /etc/nginx/cert.crt -extensions v3_ca
+    creates=/etc/nginx/cert.crt
+
+- template:
+    src: nginx_conf.d_httpsproxy.conf
+    dest: /etc/nginx/conf.d/httpsproxy.conf
+    owner: root
+    mode: 0644
+  notify: reload nginx
+
+- service:
+    name: nginx
+    enabled: yes
+    state: started

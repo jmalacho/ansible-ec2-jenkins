@@ -1,0 +1,5 @@
+---
+- name: Build Yum Repo {{ item.name }}
+  template:
+    src: yum-repo.j2
+    dest: /etc/yum.repos.d/{{item.name}}.repo

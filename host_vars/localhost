@@ -1,0 +1,8 @@
+---
+vpc:
+  region: us-east-2
+  cidr16: 10.4 
+ec2:
+  type: t2.medium
+  key: jonmalachowski2
+  uniqueid: aregoij
